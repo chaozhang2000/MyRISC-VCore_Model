@@ -7,6 +7,12 @@
 #include "readreg_issue.h"
 #include "issue_execute.h"
 
+//这是代表流水线中的发射阶段
+//主要是两部分
+//第一部分是run()，就是这阶段的运行
+//第二部分是支持这部分运行的数据结构
+//	1.输入和输出的接口信号的指针，因为发射队列的数量不只一个，发射的目的地也不只一个，所以都是指针的指针
+//	2.发射队列issue_queue 里面实际上是包含了真实存放发射队列中数据的FIFO,存放的数据是这里定义的issue_queue_item_t,以及一些模拟真实发射队列行为的数据结构和函数方法。
 namespace pipeline
 {
     typedef struct issue_feedback_pack_t

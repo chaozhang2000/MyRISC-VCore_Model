@@ -2,6 +2,11 @@
 #include "common.h"
 #include "fifo.h"
 
+//issue_queue主要有两种行为
+//1.将fifo中的某个位置设置为某个值，set_item
+//2.pop
+//真实的issue_queue是public fifo
+//std::quenue<sync_request_t>只是用来存放请求的队列，是为了将并行的电路结构串行化而设置的
 namespace component
 {
     template<typename T>

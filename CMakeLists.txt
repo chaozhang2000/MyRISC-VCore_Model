@@ -14,3 +14,4 @@ add_executable(sim ${src_files})
 
 # TODO: 如有需要，请添加测试并安装目标。
 add_custom_target(run COMMAND sim DEPENDS sim WORKING_DIRECTORY ${CMAKE_PROJECT_DIR})
+
