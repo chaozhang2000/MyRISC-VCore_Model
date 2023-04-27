@@ -23,6 +23,7 @@ namespace pipeline
         memset(&feedback_pack, 0, sizeof(feedback_pack));
         
         //handle output
+				//处理输出，主要是将发射队列中的指令进行发射
         if(!issue_q.is_empty())
         {
             issue_queue_item_t items[ISSUE_WIDTH];
@@ -32,6 +33,7 @@ namespace pipeline
             //get up to 2 items from issue_queue
             assert(this->issue_q.get_front_id(&id));
             
+						//根据发射队列的宽度，获取当前周期可能要发射的几条指令,暂存到itmes中
             for(uint32_t i = 0;i < ISSUE_WIDTH;i++)
             {
                 items[i] = this->issue_q.get_item(id);
@@ -47,6 +49,7 @@ namespace pipeline
             {
                 if(items[i].enable)
                 {
+										//将需要如何可以发射，将发射的指令写入与执行部分对应的FIFO中
                     issue_execute_pack_t send_pack;
                     memset(&send_pack, 0, sizeof(send_pack));
                     
@@ -81,6 +84,8 @@ namespace pipeline
                     memcpy(&send_pack.sub_op, &items[i].sub_op, sizeof(items[i].sub_op));
                     
                     //ready to dispatch
+										//index 是对应功能部件的编号，如alu若有两个则有两个编号，alu前面的fifo也有两个
+										//alu_index,bru_index等都是issue的私有变量，目前都是0
                     uint32_t *unit_index = NULL;
                     uint32_t unit_cnt = 0;
                     component::fifo<issue_execute_pack_t> **unit_fifo = NULL;
@@ -136,8 +141,8 @@ namespace pipeline
                             break;
                         }
                         
+												//如果当前功能单元的fifo满了，会去将数据放到下一个功能单元的fifo中，但这样的方式应该会造成当前功能单元fifo的堵塞，不太合适。
                         selected_index = (selected_index + 1) % unit_cnt;
-                        
                         if(selected_index == *unit_index)
                         {
                             break;
@@ -146,8 +151,11 @@ namespace pipeline
                     
                     if(found)
                     {
+												//这里发现上面的顾虑消失了，将一条指令加入一个功能单元的fifo后，会切换下一次发射的目标fifo
                         *unit_index = (selected_index + 1) % unit_cnt;
+												//将指令对应的操作推入对应的fifo,完成发射
                         assert(unit_fifo[selected_index]->push(send_pack));
+												//这个是将pop的请求推进请求队列中，最后会在时钟沿统一处理所有请求，那时发射队列FIFO中的数据才会发生变化
                         this->issue_q.pop_sync();//handle ok, pop this item
                     }
                     else
@@ -159,16 +167,19 @@ namespace pipeline
         }    
         
         //handle input
+				//处理输入，主要是将指令存入发射队列
         if(!this->busy)
         {
             this->busy = true;
             this->last_index = 0;//from item 0
         }
         
+				//finish表示能成功完成入列
         auto finish = true;
         
         for(;this->last_index < ISSUE_WIDTH;this->last_index++)
         {
+						//猜测是跳过代表nop的操作
             if(!rev_pack.op_info[this->last_index].enable)
             {
                 continue;
@@ -219,7 +230,9 @@ namespace pipeline
             this->last_index = 0;
         }
         
+				//如果发射队列繁忙，当前不能接受数据，会将stall流水线的信号发送出去
         feedback_pack.stall = this->busy;
+				//这里才是更新发射队列的状态
         issue_q.sync();
         return feedback_pack;
     }
