@@ -5,6 +5,7 @@
 #include "checkpoint_buffer.h"
 namespace component
 {
+		//---------------------------关于如何获取是否跳转的预测--------------------------//
 		//采用基于全局历史和局部历史的混合分支预测模式
 		//gshare表示全局历史，local表示局部历史
 		//pht pattern history table 存储每个模式下的历史跳转状态，用两位计数器表示
@@ -16,6 +17,12 @@ namespace component
 		//索引local_pht用的是bht_value ^ pc_p1
 		//bht_value是来自local_bht_retired,lobal_bht实际上是一个bhr的表，bhr branch history register，记录某一条分支指令过去的执行结果，bhr和ghr类似
 		//从lobal_bht中索引bht_value的索引值也是pc_p1,也即代表一条指令
+		
+		//而实际最终判断是否跳转是综合考虑全局历史和局部历史来选择的，根据cpht来选择是选用全局的结果还是局部的结果，
+		//索引cpht使用的索引与全局相同gshare_global_history ^ pc_p1 pc_p1
+		//至于cpht的更新，cpht中索引到的值为0、1表示选用全局预测的结果，2、3表示选用局部预测的结果，所以更新cpht的时候也根据选用全局预测结果还是局部预测结果而不同，选用全局且预测正确时-1,选用局部且预测正确时+1
+
+		//------------------------------关于获取预测跳转的地址---------------------------//
 		
     class branch_predictor : public if_reset_t
     {
