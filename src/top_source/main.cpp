@@ -125,13 +125,14 @@ void fetch_not_full_add()
     fetch_not_full++;
 }
 
-static component::fifo<pipeline::fetch_decode_pack_t> fetch_decode_fifo(FETCH_DECODE_FIFO_SIZE);
-static component::fifo<pipeline::decode_rename_pack_t> decode_rename_fifo(FETCH_DECODE_FIFO_SIZE);
 static pipeline::rename_readreg_pack_t default_rename_readreg_pack;
 static pipeline::readreg_issue_pack_t default_readreg_issue_pack;
 static pipeline::execute_wb_pack_t default_execute_wb_pack;
 static pipeline::wb_commit_pack_t default_wb_commit_pack;
 
+//---------------------------------用来连接各个模块之间的port和fifo-----------------------------------//
+static component::fifo<pipeline::fetch_decode_pack_t> fetch_decode_fifo(FETCH_DECODE_FIFO_SIZE);
+static component::fifo<pipeline::decode_rename_pack_t> decode_rename_fifo(FETCH_DECODE_FIFO_SIZE);
 static component::port<pipeline::rename_readreg_pack_t> rename_readreg_port(default_rename_readreg_pack);
 static component::port<pipeline::readreg_issue_pack_t> readreg_issue_port(default_readreg_issue_pack);
 static component::fifo<pipeline::issue_execute_pack_t> *issue_alu_fifo[ALU_UNIT_NUM];
@@ -149,7 +150,9 @@ static component::port<pipeline::execute_wb_pack_t> *lsu_wb_port[LSU_UNIT_NUM];
 static component::port<pipeline::execute_wb_pack_t> *mul_wb_port[MUL_UNIT_NUM];
 
 static component::port<pipeline::wb_commit_pack_t> wb_commit_port(default_wb_commit_pack);
+//----------------------------------------------------------------------------------------------------//
 
+//---------------------------------存放状态的组件-----------------------------------//
 //static component::memory memory(0x80000000, 1048576);
 static component::bus bus;
 static component::rat rat(PHY_REG_NUM, ARCH_REG_NUM);
@@ -161,7 +164,9 @@ static component::checkpoint_buffer checkpoint_buffer(CHECKPOINT_BUFFER_SIZE);
 static component::branch_predictor branch_predictor;
 static component::interrupt_interface interrupt_interface(&csr_file);
 static component::slave::clint clint(&interrupt_interface);
+//----------------------------------------------------------------------------------------------------//
 
+//---------------------------------执行功能的组件-----------------------------------//
 static pipeline::fetch fetch_stage(&bus, &fetch_decode_fifo, &checkpoint_buffer, &branch_predictor, &store_buffer, 0x80000000);
 static pipeline::decode decode_stage(&fetch_decode_fifo, &decode_rename_fifo);
 static pipeline::rename rename_stage(&decode_rename_fifo, &rename_readreg_port, &rat, &rob, &checkpoint_buffer);
@@ -175,6 +180,8 @@ static pipeline::execute::lsu *execute_lsu_stage[LSU_UNIT_NUM];
 static pipeline::execute::mul *execute_mul_stage[MUL_UNIT_NUM];
 static pipeline::wb wb_stage(alu_wb_port, bru_wb_port, csr_wb_port, div_wb_port, lsu_wb_port, mul_wb_port, &wb_commit_port, &phy_regfile, &checkpoint_buffer);
 static pipeline::commit commit_stage(&wb_commit_port, &rat, &rob, &csr_file, &phy_regfile, &checkpoint_buffer, &branch_predictor, &interrupt_interface);
+//----------------------------------------------------------------------------------------------------//
+
 
 static pipeline::decode_feedback_pack_t t_decode_feedback_pack;
 static pipeline::rename_feedback_pack_t t_rename_feedback_pack;
@@ -948,20 +955,6 @@ static void run()
 
     while(1)
     {
-        /*if((cpu_clock_cycle >= 180) && need_to_trigger)
-        {
-            step_state = true;
-            wait_commit = false;
-            need_to_trigger = false;
-        }*/
-
-        /*if((committed_instruction_num >= 16590) && need_to_trigger)
-        {
-            step_state = true;
-            wait_commit = false;
-            need_to_trigger = false;
-        }*/
-
         if(ctrl_c_detected || (step_state && ((!wait_commit) || (wait_commit && rob.get_committed()))))
         {
             if(ctrl_c_detected)
@@ -1032,29 +1025,77 @@ static void run()
 
         if(rob.get_committed())
         {
-            /*auto v1 = store_buffer.get_feedback_value(0x800170f8, 4, memory.read32(0x800170f8));
-            auto v2 = store_buffer.get_feedback_value(0x8000f022, 1, memory.read8(0x8000f022));*/
-            //trace_file << cpu_clock_cycle << "," << fillzero(8) << outhex(get_current_pc()) << "," << fillzero(8) << outhex(v1) << "," << fillzero(2) << outhex(v2) << std::endl;
-            /*trace_file << cpu_clock_cycle << "," << committed_instruction_num << "," << fillzero(8) << outhex(get_current_pc());
-
-            for(auto i = 1;i < 32;i++)
-            {
-                uint32_t phy_id;
-                rat.get_commit_phy_id(i, &phy_id);
-                auto v = phy_regfile.read(phy_id);
-                trace_file << "," << fillzero(8) << outhex(v.value);
-            }
-
-            trace_file << std::endl;*/
 
             auto t = 0;
         }
 
-        rob.set_committed(false);
+        rob.set_committed(false);//将rob的一个bool私有变量cimmitted设置为flase
         trace_pre();
         t_commit_feedback_pack = commit_stage.run();
-        t_wb_feedback_pack = wb_stage.run(t_commit_feedback_pack);
-
+//----------------------------------------commit 部分学习-------------------------------//
+//input信号
+//input wb_commit_port 是一个包含wb_commit_pack_t的一个port，wb_commit_port主要是包含wb_commit_op_info_t的信号可以看成是wb_commit_op_info的数组，称为是op_info[]，见wb_commit.h
+//	typedef struct wb_commit_op_info_t
+//	{
+//				bool enable;//this item has op
+//        uint32_t value;
+//        bool valid;//this item has valid op
+//        uint32_t rob_id;
+//        uint32_t pc;
+//        uint32_t imm;
+//        bool has_exception;
+//        riscv_exception_t exception_id;
+//        uint32_t exception_value;
+//
+//        bool predicted;
+//        bool predicted_jump;
+//        uint32_t predicted_next_pc;
+//        bool checkpoint_id_valid;
+//        uint32_t checkpoint_id;
+//
+//        bool bru_jump;
+//        uint32_t bru_next_pc;
+//
+//        uint32_t rs1;
+//        arg_src_t arg1_src;
+//        bool rs1_need_map;
+//        uint32_t rs1_phy;
+//        uint32_t src1_value;
+//        bool src1_loaded;
+//
+//        uint32_t rs2;
+//        arg_src_t arg2_src;
+//        bool rs2_need_map;
+//        uint32_t rs2_phy;
+//        uint32_t src2_value;
+//        bool src2_loaded;
+//
+//        uint32_t rd;
+//        bool rd_enable;
+//        bool need_rename;
+//        uint32_t rd_phy;
+//        uint32_t rd_value;
+//
+//        uint32_t csr;
+//        uint32_t csr_newvalue;
+//        bool csr_newvalue_valid;
+//        op_t op;
+//        op_unit_t op_unit;
+//        
+//        union
+//        {
+//            alu_op_t alu_op;
+//            bru_op_t bru_op;
+//            div_op_t div_op;
+//            lsu_op_t lsu_op;
+//            mul_op_t mul_op;
+//            csr_op_t csr_op;
+//        }sub_op;
+//
+//上述的所有input信号没有由wb模块产生的，都是来自于前面的模块，wb只原封不动做传递
+//
+//--------------------------------------------------------------------------------------//
+        t_wb_feedback_pack=wb_stage.run(t_commit_feedback_pack);
         uint32_t execute_feedback_channel = 0;
 
         for(auto i = 0;i < ALU_UNIT_NUM;i++)
