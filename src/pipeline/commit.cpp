@@ -123,7 +123,7 @@ namespace pipeline
 							feedback_pack.next_handle_rob_id_valid = rob->get_next_id(this->rob_item_id, &feedback_pack.next_handle_rob_id) && (feedback_pack.next_handle_rob_id != first_id);
 							feedback_pack.committed_rob_id_valid[i] = true;
 							feedback_pack.committed_rob_id[i] = this->rob_item_id;
-							//当前要提交的指令有异常则对异常进行处理
+							//--当前要提交的指令有异常则对异常进行处理
 							if(rob_item.has_exception)
 							{
 								assert(rob->get_tail_id(&this->restore_rob_item_id));
@@ -133,13 +133,13 @@ namespace pipeline
 								need_flush = true;
 								break;
 							}
-							//当前要提交的指令没有异常,进行正常提交
+							//--当前要提交的指令没有异常,进行正常提交
 							else
 							{
 								//首先这条指令必然提交成功，可将rob进行pop
 								rob->pop_sync();
 								//接下来要做的就是提交阶段需要完成的任务
-								//要提交的指令是要写寄存器的(猜测)	
+								//---没有异常，要提交的指令是要写寄存器的(猜测)	
 								if(rob_item.old_phy_reg_id_valid)
 								{
 									rat->release_map_sync(rob_item.old_phy_reg_id);//会在rat的操作请求队列中push一个释放某一项的请求，在rat的sync的时候会统一处理所有请求
@@ -151,13 +151,14 @@ namespace pipeline
 								rob->set_committed(true);//表示rob已经完成本次commit
 								rob->add_commit_num(1);//记录commit的次数
 
-								//要提交的指令是要写csr的
+								//---没有异常要提交的指令是要写csr的
 								if(rob_item.csr_newvalue_valid)
 								{
 									csr_file->write_sync(rob_item.csr_addr, rob_item.csr_newvalue);//加上一条写状态寄存器的请求
 								}
 
 								//branch handle
+								//---没有异常，要提交的指令是跳转指令
 								if(rob_item.bru_op)//bru_op是一个bool，表示是否是跳转指令
 								{
 									branch_num_add();
@@ -168,12 +169,12 @@ namespace pipeline
 										mstatus.set_mie(mstatus.get_mpie());
 										csr_file->write_sys_sync(CSR_MSTATUS, mstatus.get_value());
 									}
-
+									//----没有异常，要提交的指令是跳转指令，且做过预测
 									if(rob_item.predicted)
 									{
 										branch_predicted_add();
 										//whether prediction is success bru_jump代表是b指令（猜测）
-										//预测成功的判断标准是，预测是否跳转和真实是否跳转的情况相同，若预测为跳转则还要额外要求跳转地址和预测跳转地址相同
+										//-----没有异常，要提交的是跳转，做过预测，预测正确   预测成功的判断标准是，预测是否跳转和真实是否跳转的情况相同，若预测为跳转则还要额外要求跳转地址和预测跳转地址相同
 										if((rob_item.bru_jump == rob_item.predicted_jump) && ((rob_item.bru_next_pc == rob_item.predicted_next_pc) || (!rob_item.predicted_jump)))
 										{
 											branch_hit_add();
@@ -182,23 +183,25 @@ namespace pipeline
 											break;
 											//nothing to do
 										}
-										//预测失败，在commit阶段要做的事
+										//-----没有异常，要提交的是跳转，做过预测，预测失败
 										else if(rob_item.checkpoint_id_valid)
 										{
 											branch_miss_add();
 											branch_predictor->update_prediction(rob_item.pc, rob_item.inst_value, rob_item.bru_jump, rob_item.bru_next_pc, false, i);//对分支预测器的操作
-											auto cp = checkpoint_buffer->get_item(rob_item.checkpoint_id);
+											auto cp = checkpoint_buffer->get_item(rob_item.checkpoint_id);//从checkpoint_buffer获取需要恢复的数据。
 											if(rob_item.old_phy_reg_id_valid)
 											{
-												rat->cp_release_map(cp, rob_item.old_phy_reg_id);
+												rat->cp_release_map(cp, rob_item.old_phy_reg_id); //这里实际上就是cp_set_vaild(cp,old_phy_reg_id,false),在rat中将对应的编号的valid取消来进行释放。但old_physical_reg_id是什么还不知道？？？
 												//phy_regfile->cp_set_data_valid(cp, rob_item.old_phy_reg_id, false);
 												//rat->cp_commit_map(cp, rob_item.new_phy_reg_id);
 											}
 
 											uint32_t _cnt = 0;
 
+											//下面对物理寄存器和rat的valid进行处理，将cp中显示visible的在rat和phy_regfile中对应的valid位置位
 											for(uint32_t i = 0;i < PHY_REG_NUM;i++)
 											{
+												//下面这段代码中的cp_get_visible和cp_set_visible实际都是对checkpoint的操作，并不是在对rat和物理寄存器进行恢复，下面这段代码作的是将valid位按照visible来设置
 												if(!rat->cp_get_visible(cp, i))
 												{
 													rat->cp_set_valid(cp, i, false);
@@ -214,8 +217,9 @@ namespace pipeline
 
 											assert(_cnt == 31);
 
-											rat->restore_sync(cp);
-											phy_regfile->restore_sync(cp);
+											rat->restore_sync(cp);//将restore请求压入请求队列，在下个周期就会实现恢复，但这里的恢复只是根据cp中的rat_phy_map_table_valid,和rat_phy_map_table_visible来恢复rat中的对应结构，只是恢复了valid和visible就够吗，还没发现恢复数据的地方？？？？？
+											phy_regfile->restore_sync(cp);//与上一行相同，只是对物理寄存器操作，也是拷贝valid位。
+											//对feedback_pack的信号赋值，jump代表是否是条件跳转，next_pc来自rob
 											feedback_pack.enable = true;
 											feedback_pack.flush = true;
 											feedback_pack.jump_enable = true;
@@ -232,6 +236,7 @@ namespace pipeline
 											assert(false);
 										}
 									}
+									//----没有异常，要提交的指令是跳转指令，但没有做过预测(猜测) !rob_item.predicted （我现在认为这种情况也不会发生）
 									else
 									{
 										feedback_pack.enable = true;
@@ -240,14 +245,20 @@ namespace pipeline
 										feedback_pack.next_pc = rob_item.bru_jump ? rob_item.bru_next_pc : (rob_item.pc + 4);
 										break;
 									}
+								//---
 								}
+							//--
 							}
+						//-
 						}
+						//rob中的当前指令还没有finish，不能提交，这个周期的commit什么也不做
 						else
 						{
 							break;
 						}
 
+						//在尝试进行commit rob中的下一条指令的时候，遇到下面情况则停止本周期的commit
+						//rob中取不到下一条指令了或者，或者下条还没有valid，这里rob_item_id==first_id就表示下一条没有valid,可见feedback_pack.next_handle_rob_id_valid信号的赋值
 						if(!rob->get_next_id(this->rob_item_id, &this->rob_item_id) || (this->rob_item_id == first_id))
 						{
 							break;

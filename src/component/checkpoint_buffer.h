@@ -5,6 +5,14 @@
 
 namespace component
 {
+//--------------------------------------什么是checkpoint buffer 来自bing-----------------------------
+//checkpoint buffer的功能是在处理器执行指令时，将处理器的状态（如程序计数器、寄存器、标志位等）保存在缓冲区中，以便在发生分支错误预测或异常时，能够从缓冲区中恢复处理器的状态，继续执行正确的指令。
+//checkpoint buffer的工作原理是，当处理器遇到一个分支指令时，它会根据分支预测机制来预测分支的方向，并将当前的处理器状态保存在checkpoint buffer中，然后按照预测的方向执行指令。如果分支预测正确，则处理器会释放
+//checkpoint buffer中的状态，并继续执行后续的指令。如果分支预测错误，则处理器会从checkpoint buffer中恢复状态，并按照正确的方向执行指令^2^。
+//checkpoint buffer可以提高处理器的性能，因为它可以减少分支错误预测造成的性能损失，同时也可以提高处理器的可靠性，因为它可以在发生异常时恢复处理器的状态，避免程序崩溃。
+//---------------------------------------------------------------------------------------------------
+//checkpoint buffer是checkpoint_t的一个fifo
+
     static const uint32_t phy_reg_num_bitmap_size = (PHY_REG_NUM + bitsizeof(uint64_t) - 1) / (bitsizeof(uint64_t));
 
     typedef struct checkpoint_t : public if_print_t

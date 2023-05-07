@@ -21,11 +21,23 @@ namespace component
 		
 		//而实际最终判断是否跳转是综合考虑全局历史和局部历史来选择的，根据cpht来选择是选用全局的结果还是局部的结果，
 		//索引cpht使用的索引与全局相同gshare_global_history ^ pc_p1 pc_p1
-		//至于cpht的更新，cpht中索引到的值为0、1表示选用全局预测的结果，2、3表示选用局部预测的结果，所以更新cpht的时候也根据选用全局预测结果还是局部预测结果而不同，选用全局且预测正确时-1,选用局部且预测正确时+1
 
 		//------------------------------关于获取预测跳转的地址---------------------------//
-		//instruction_next_pc 对jal，jalr以及b指令分开处理，在分支预测的时候有一个简单译码的过程对于可以用立即数加当前pc计算的目标地址的指令，结合预测是否跳转，直接计算预测跳转的地址。
-		//对于无法计算的预测跳转地址的指令，采用ras(返回地址栈)来处理return的跳转在call的时候会将当前指令的pc+4压入栈中，采用call_target_cache来处理call指令，call_target_cache记录之前call指令跳转的地址，再碰到这条指令的时候，将上次的地址作为是预测的跳转地址。
+		//instruction_next_pc 对jal，jalr以及b指令分开处理，
+		//对于条件跳转语句在分支预测的时候有一个简单译码的过程对于可以用立即数加当前pc计算的目标地址的指令，结合预测是否跳转，直接计算预测跳转的地址。
+		//对于可能是call和return的直接跳转语句,采用call_target_cache来处理call指令，call_target_cache记录之前call指令跳转的地址，再碰到这条指令的时候，将上次的地址作为是预测的跳转地址。
+		//	call_target_cache用pc低位与call_global_history的异或来寻址的。
+		//	call_global_history和上面的ghr还有bhr类似，记录之前的几条可能是call的指令是否发生跳转。
+		//	采用ras(返回地址栈)来处理return的跳转在call的时候会将当前指令的pc+4压入栈中，后面遇到return的时候会从栈中弹出预测跳转地址
+		//对于其他直接跳转指令，设置了normal_target_cache和normal_global_history，和处理call指令类似。
+		//-----------------------------关于预测器的更新---------------------------------//
+		//update_prediction 这个函数在commit分支指令的时候会被调用，来更新分支预测器
+		//对于条件分支指令更新的部分包括
+		//	全局部分的更新 1.global pht的更新，根据预测的正确与否对2bit进行加减 2.ghr的更新，若预测失败更新ghr，成功不更新
+		//	局部部分的更性 1.local pht的更新，同上。2.bhr的更新，若预测失败更新，成功不更新。
+		//	混合部分的更新cpht中索引到的值为0、1表示选用全局预测的结果，2、3表示选用局部预测的结果，所以更新cpht的时候也根据选用全局预测结果还是局部预测结果而不同，选用全局且预测正确时-1,选用局部且预测正确时+1
+		//对于直接跳转指令更新的部分包括
+		//	更新call_target_cache,call_global_history,normal_target_cache，normal_global_history,更新与预测成功与否无关
     class branch_predictor : public if_reset_t
     {
         private:

@@ -243,6 +243,7 @@ namespace component
                 //memcpy(phy_map_table_commit, cp.rat_phy_map_table_commit, sizeof(cp.rat_phy_map_table_commit));
             }
 
+						//将restore的请求压入请求队列
             void restore_sync(checkpoint_t &cp)
             {
                 sync_request_t t_req;
