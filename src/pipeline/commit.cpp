@@ -268,10 +268,12 @@ namespace pipeline
 			}
 
 			//handle input
+			//实际上就是在不发生flush的时候对rob中的状态进行更新。
 			if(!need_flush)
 			{
 				auto rev_pack = wb_commit_port->get();
 
+				//模仿多端口rob的写行为
 				for(auto i = 0;i < EXECUTE_UNIT_NUM;i++)
 				{
 
@@ -298,21 +300,22 @@ namespace pipeline
 			}
 
 		}
+		//对应的if是this->cur_state == state_t::normal
+		//当前状态是冲刷的时候要做什么
 		else if(this->cur_state == state_t::flush)//flush
 		{
 			//flush rob and restore rat
-			auto t_rob_item = rob->get_item(this->restore_rob_item_id);
+			auto t_rob_item = rob->get_item(this->restore_rob_item_id);//restore_rob_item_id是rob fifo中尾部的索引(写指针的位置)
+			//这里为什么只对restore_rob_item_id一个id进行处理？
 			if(t_rob_item.old_phy_reg_id_valid)
 			{
-				rat->restore_map_sync(t_rob_item.new_phy_reg_id, t_rob_item.old_phy_reg_id);
+				rat->restore_map_sync(t_rob_item.new_phy_reg_id, t_rob_item.old_phy_reg_id);//restore_map是清掉rat中new_phy_reg_id 对应的表项，并清掉valid位，然后恢复old_phy_reg_id对应的表项的valid位。
 				phy_regfile->write_sync(t_rob_item.new_phy_reg_id, default_phy_reg_item, false);
 			}
 
 			{
 				uint32_t id;
 				auto t = rob->get_prev_id(this->restore_rob_item_id, &id);
-				this->tdb.update_signal<uint8_t>(trace::domain_t::input, "rob_commit_flush_next_id", id, 0);
-				this->tdb.update_signal<uint8_t>(trace::domain_t::input, "rob_commit_flush_next_id_valid", t, 0);
 			}
 
 			if((this->restore_rob_item_id != this->rob_item_id) && rob->get_prev_id(this->restore_rob_item_id, &this->restore_rob_item_id))
