@@ -302,17 +302,21 @@ namespace pipeline
 		}
 		//对应的if是this->cur_state == state_t::normal
 		//当前状态是冲刷的时候要做什么
+		//注意状态只有在满足一定情况时才会切换会normal状态，所以state_t == flush和interrput_flush状态会持续不少个时钟周期,normal的工作则在一个周期内就会完成。
+		//下面来看看flush状态下干的事
 		else if(this->cur_state == state_t::flush)//flush
 		{
 			//flush rob and restore rat
 			auto t_rob_item = rob->get_item(this->restore_rob_item_id);//restore_rob_item_id是rob fifo中尾部的索引(写指针的位置)
 			//这里为什么只对restore_rob_item_id一个id进行处理？
+			//实际上每次都是处理一个，从最新的开始处理，没有处理完全部不会进行状态切换
 			if(t_rob_item.old_phy_reg_id_valid)
 			{
 				rat->restore_map_sync(t_rob_item.new_phy_reg_id, t_rob_item.old_phy_reg_id);//restore_map是清掉rat中new_phy_reg_id 对应的表项，并清掉valid位，然后恢复old_phy_reg_id对应的表项的valid位。
-				phy_regfile->write_sync(t_rob_item.new_phy_reg_id, default_phy_reg_item, false);
+				phy_regfile->write_sync(t_rob_item.new_phy_reg_id, default_phy_reg_item, false); //清零new_phy_reg_id对应的物理寄存器
 			}
 
+			//更新restore_rob_item_id，及下个时钟周期要恢复的指令在rob中的id
 			{
 				uint32_t id;
 				auto t = rob->get_prev_id(this->restore_rob_item_id, &id);
